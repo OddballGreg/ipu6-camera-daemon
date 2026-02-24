@@ -86,7 +86,7 @@ Log out and back in for group changes to take effect.
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone and build
-git clone https://github.com/YOUR_USERNAME/ipu6-camera-daemon.git
+git clone https://github.com/OddballGreg/ipu6-camera-daemon.git
 cd ipu6-camera-daemon
 cargo build --release
 ```
