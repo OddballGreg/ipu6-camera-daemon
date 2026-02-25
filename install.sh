@@ -46,11 +46,55 @@ else
     chmod +x "$BINARY_SOURCE"
 fi
 
-# Install dependencies
+# Install base dependencies
 echo ""
 echo -e "${YELLOW}Installing system dependencies (requires sudo)...${NC}"
 sudo apt-get update
 sudo apt-get install -y v4l2loopback-dkms gstreamer1.0-tools
+
+# Check if icamerasrc is available
+echo ""
+echo -e "${YELLOW}Checking for icamerasrc GStreamer plugin...${NC}"
+if ! gst-inspect-1.0 icamerasrc &>/dev/null; then
+    echo -e "${YELLOW}icamerasrc not found. Installing Intel IPU6 camera packages...${NC}"
+    
+    # Add Intel IPU6 PPA
+    if ! grep -q "oem-solutions-group/intel-ipu6" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+        echo -e "${YELLOW}Adding Intel IPU6 PPA...${NC}"
+        sudo add-apt-repository -y ppa:oem-solutions-group/intel-ipu6
+        sudo apt-get update
+    fi
+    
+    # Install IPU6 packages
+    # Package names vary by Ubuntu version, try common ones
+    sudo apt-get install -y \
+        gstreamer1.0-icamera \
+        libcamhal-ipu6ep \
+        libipu6ep \
+        2>/dev/null || \
+    sudo apt-get install -y \
+        gstreamer1.0-icamera \
+        libcamhal0 \
+        2>/dev/null || \
+    echo -e "${YELLOW}Warning: Could not auto-install IPU6 packages. You may need to install them manually.${NC}"
+    
+    # Verify installation
+    if gst-inspect-1.0 icamerasrc &>/dev/null; then
+        echo -e "${GREEN}✓ icamerasrc installed successfully${NC}"
+    else
+        echo -e "${RED}Warning: icamerasrc still not available.${NC}"
+        echo -e "${YELLOW}You may need to manually install the Intel IPU6 camera packages for your system.${NC}"
+        echo -e "${YELLOW}See: https://launchpad.net/~oem-solutions-group/+archive/ubuntu/intel-ipu6${NC}"
+        echo ""
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+else
+    echo -e "${GREEN}✓ icamerasrc already installed${NC}"
+fi
 
 # Configure v4l2loopback
 echo ""
@@ -113,15 +157,41 @@ RestartSec=3
 WantedBy=default.target
 EOF
 
+# Disable and mask conflicting services
+echo ""
+echo -e "${YELLOW}Disabling conflicting services...${NC}"
+
 # Disable v4l2-relayd if present
-if systemctl list-unit-files | grep -q v4l2-relayd; then
-    echo -e "${YELLOW}Disabling v4l2-relayd...${NC}"
-    sudo systemctl disable --now v4l2-relayd@default.service 2>/dev/null || true
+if systemctl list-unit-files 2>/dev/null | grep -q v4l2-relayd; then
+    echo "  Disabling v4l2-relayd..."
+    sudo systemctl stop v4l2-relayd@default.service 2>/dev/null || true
+    sudo systemctl stop v4l2-relayd.service 2>/dev/null || true
+    sudo systemctl disable v4l2-relayd@default.service 2>/dev/null || true
+    sudo systemctl disable v4l2-relayd.service 2>/dev/null || true
+    sudo systemctl mask v4l2-relayd@default.service 2>/dev/null || true
+    sudo systemctl mask v4l2-relayd.service 2>/dev/null || true
 fi
+
+# Remove old ipu6-camera.service if it exists (from earlier testing)
+if [[ -f /etc/systemd/system/ipu6-camera.service ]]; then
+    echo "  Removing old ipu6-camera.service..."
+    sudo systemctl stop ipu6-camera.service 2>/dev/null || true
+    sudo systemctl disable ipu6-camera.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/ipu6-camera.service
+    sudo systemctl daemon-reload
+fi
+
+echo -e "${GREEN}✓ Conflicting services disabled${NC}"
 
 # Enable and start the service
 systemctl --user daemon-reload
 systemctl --user enable ipu6-camera-daemon.service
+systemctl --user stop ipu6-camera-daemon.service 2>/dev/null || true
+
+# Kill any leftover gst-launch processes
+pkill -f "gst-launch.*v4l2sink.*video0" 2>/dev/null || true
+sleep 1
+
 systemctl --user start ipu6-camera-daemon.service
 
 echo -e "${GREEN}✓ Service installed and started${NC}"
