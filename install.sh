@@ -209,6 +209,11 @@ echo "  Status:  systemctl --user status ipu6-camera-daemon"
 echo "  Logs:    journalctl --user -u ipu6-camera-daemon -f"
 echo "  Restart: systemctl --user restart ipu6-camera-daemon"
 echo ""
+echo -e "${YELLOW}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${YELLOW}║  IMPORTANT: A reboot is recommended for all changes to take    ║${NC}"
+echo -e "${YELLOW}║  effect (udev rules, kernel modules, group membership).        ║${NC}"
+echo -e "${YELLOW}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
 if ! groups | grep -q video; then
-    echo -e "${YELLOW}⚠ Remember to log out and back in for video group access!${NC}"
+    echo -e "${YELLOW}⚠ You were added to the video group - reboot required for this.${NC}"
 fi
