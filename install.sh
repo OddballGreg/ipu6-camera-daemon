@@ -134,6 +134,15 @@ echo -e "${GREEN}✓ udev rules configured${NC}"
 # Install binary
 echo ""
 echo -e "${YELLOW}Installing daemon...${NC}"
+
+# Stop existing service first to avoid "Text file busy" error
+systemctl --user stop ipu6-camera-daemon.service 2>/dev/null || true
+pkill -f "ipu6-camera-daemon" 2>/dev/null || true
+sleep 1
+
+# Remove old binary before copying (avoids "Text file busy" if still held)
+rm -f "$INSTALL_DIR/ipu6-camera-daemon" 2>/dev/null || true
+
 cp "$BINARY_SOURCE" "$INSTALL_DIR/ipu6-camera-daemon"
 chmod +x "$INSTALL_DIR/ipu6-camera-daemon"
 echo -e "${GREEN}✓ Installed to $INSTALL_DIR/ipu6-camera-daemon${NC}"
