@@ -368,24 +368,26 @@ impl CameraDaemon {
             self.last_client_count = client_count;
         }
 
-        let has_client =
-            client_count > 0 || (had_open && placeholder_ok && self.placeholder_process.is_some());
+        let device_opened = had_open && placeholder_ok && self.placeholder_process.is_some();
 
-        if has_client && !self.camera_active {
+        if (client_count > 0 || device_opened) && !self.camera_active {
             if self.client_detected_at.is_none() {
                 debug!("Client detected, starting activation delay");
                 self.client_detected_at = Some(Instant::now());
             }
-        } else if !has_client && !self.camera_active {
+        } else if client_count == 0 && !self.camera_active {
             self.client_detected_at = None;
         }
 
+        let delay_elapsed = self
+            .client_detected_at
+            .map(|t| t.elapsed() >= Duration::from_millis(self.args.activation_delay_ms))
+            .unwrap_or(false);
+
         let should_activate = if self.camera_active {
             client_count > 0
-        } else if let Some(detected_at) = self.client_detected_at {
-            detected_at.elapsed() >= Duration::from_millis(self.args.activation_delay_ms)
         } else {
-            false
+            delay_elapsed && client_count > 0
         };
 
         if should_activate {
