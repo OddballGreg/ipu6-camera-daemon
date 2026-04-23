@@ -100,7 +100,7 @@ fi
 echo ""
 echo -e "${YELLOW}Configuring v4l2loopback...${NC}"
 sudo tee /etc/modprobe.d/v4l2loopback.conf > /dev/null << 'MODCONF'
-options v4l2loopback devices=1 exclusive_caps=0 card_label="Intel MIPI Camera" max_buffers=8
+options v4l2loopback devices=1 exclusive_caps=1 card_label="Intel MIPI Camera" max_buffers=8
 MODCONF
 
 # Ensure module loads on boot
