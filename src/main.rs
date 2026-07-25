@@ -87,6 +87,44 @@ fn is_process_alive(child: &mut Child) -> bool {
     }
 }
 
+/// Gracefully stop a gst-launch child.
+///
+/// CRITICAL: gst-launch owns the v4l2sink writing to /dev/video0. If it is
+/// SIGKILL'd while streaming, the v4l2loopback kernel refcount leaks and the
+/// module can no longer be unloaded (modprobe -r reports "in use" with no
+/// userspace holder), requiring a reboot to recover.
+///
+/// So we send SIGTERM first, which lets gst-launch set the pipeline to NULL and
+/// release the device, and only escalate to SIGKILL if it fails to exit within
+/// the grace period.
+fn graceful_kill(child: &mut Child, grace: Duration) {
+    let pid = child.id() as libc::pid_t;
+
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
+
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+
+    let deadline = Instant::now() + grace;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(_) => break,
+        }
+    }
+
+    warn!(
+        "gst-launch PID {} did not exit after SIGTERM, sending SIGKILL",
+        pid
+    );
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 struct CameraDaemon {
     args: Args,
     placeholder_process: Option<Child>,
@@ -221,8 +259,7 @@ impl CameraDaemon {
     fn stop_placeholder(&mut self) {
         if let Some(mut child) = self.placeholder_process.take() {
             debug!("Stopping placeholder (PID: {})", child.id());
-            let _ = child.kill();
-            let _ = child.wait();
+            graceful_kill(&mut child, Duration::from_millis(2000));
         }
     }
 
@@ -298,8 +335,7 @@ impl CameraDaemon {
     fn stop_camera(&mut self) -> Result<()> {
         if let Some(mut child) = self.camera_process.take() {
             info!("Stopping camera (PID: {})", child.id());
-            let _ = child.kill();
-            let _ = child.wait();
+            graceful_kill(&mut child, Duration::from_millis(2000));
         }
         self.camera_active = false;
         self.camera_start_time = None;
@@ -485,8 +521,7 @@ impl Drop for CameraDaemon {
     fn drop(&mut self) {
         self.stop_placeholder();
         if let Some(mut child) = self.camera_process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            graceful_kill(&mut child, Duration::from_millis(2000));
         }
     }
 }
